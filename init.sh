@@ -14,7 +14,8 @@
 # ============================================================
 set -euo pipefail
 
-TEMPLATE_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCAFFOLD_DIR="${SCRIPT_DIR}/scaffold"
 TARGET_DIR="$(pwd)"
 CLI_TOOL="claude"
 SKIP_FILL=false
@@ -152,7 +153,7 @@ capture_fingerprint() {
 copy_managed_file() {
     local relative_path="$1"
     mkdir -p "$TARGET_DIR/$(dirname "$relative_path")"
-    cp "$TEMPLATE_DIR/$relative_path" "$TARGET_DIR/$relative_path"
+    cp "$SCAFFOLD_DIR/$relative_path" "$TARGET_DIR/$relative_path"
 }
 
 check_existing_managed_files() {
@@ -194,7 +195,19 @@ ensure_resume_mode_is_valid() {
 print_resume_hint() {
     warn "可使用以下命令从断点继续："
     echo "  cd \"$TARGET_DIR\""
-    echo "  bash \"$TEMPLATE_DIR/init.sh\" --cli \"$CLI_TOOL\" --resume"
+    echo "  bash \"$SCRIPT_DIR/init.sh\" --cli \"$CLI_TOOL\" --resume"
+}
+
+ensure_scaffold_is_valid() {
+    if [[ ! -f "$SCAFFOLD_DIR/AGENTS.md" ]]; then
+        error "缺少初始化骨架文件：$SCAFFOLD_DIR/AGENTS.md"
+        exit 1
+    fi
+
+    if [[ ! -f "$SCAFFOLD_DIR/docs/plan/current.md" ]]; then
+        error "缺少初始化骨架文件：$SCAFFOLD_DIR/docs/plan/current.md"
+        exit 1
+    fi
 }
 
 detect_cli_kind() {
@@ -845,7 +858,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$TEMPLATE_DIR" == "$TARGET_DIR" ]]; then
+if [[ "$SCRIPT_DIR" == "$TARGET_DIR" ]]; then
     error "错误：不能在模板仓库自身运行 init.sh"
     echo "请 cd 到你的目标项目目录后再运行。"
     exit 1
@@ -858,6 +871,7 @@ if [[ "$SKIP_FILL" == false ]] && ! command -v "$CLI_TOOL" >/dev/null 2>&1; then
 fi
 
 init_state_paths
+ensure_scaffold_is_valid
 ensure_resume_mode_is_valid
 
 if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
