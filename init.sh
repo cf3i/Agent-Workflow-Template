@@ -6,15 +6,17 @@
 #   cd /path/to/your-repo
 #   bash /path/to/Agent-Workflow-Template/init.sh \
 #     [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] \
-#     [--skip-fill] [--resume] [--ultra]
+#     [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review]
 #
 # 选项：
 #   --cli <name>    指定 CLI 工具（默认：claude）
 #   --model <name>  指定 AI 模型（默认：gpt-5.4）
 #   --reasoning-effort <level> 指定推理强度（默认：xhigh）
-#   --skip-fill     只复制骨架，不调用 AI 填充文档
-#   --resume        从上次失败的步骤继续执行，不重跑已完成步骤
-#   --ultra         使用逐文件多次 AI 调用完成初始化填充
+#   --skip-fill        只复制骨架，不调用 AI 填充文档
+#   --resume           从上次失败的步骤继续执行，不重跑已完成步骤
+#   --greenfield       按全新 agent 主导项目初始化（默认是存量仓库 adopt 模式）
+#   --ultra            使用逐文件多次 AI 调用完成初始化填充
+#   --no-docs-review   跳过独立 docs review 步骤
 # ============================================================
 set -euo pipefail
 
@@ -26,8 +28,10 @@ MODEL="gpt-5.4"
 REASONING_EFFORT="xhigh"
 SKIP_FILL=false
 RESUME=false
+INIT_MODE="adopt"
 SINGLE_CALL=true
 ULTRA=false
+DOCS_REVIEW_ENABLED=true
 TARGET_IS_GIT_REPO=false
 
 STATE_DIR_NAME=".agent-workflow-init"
@@ -35,6 +39,7 @@ STATE_DIR=""
 STEP_DIR=""
 LOG_DIR=""
 REPORT_FILE=""
+DOCS_REVIEW_FILE=""
 FAILED_STEP_FILE=""
 
 GREEN='\033[0;32m'
@@ -65,16 +70,19 @@ usage() {
     cat <<EOF
 用法：
   cd /path/to/your-repo
-  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--resume] [--ultra]
+  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review]
 
 选项：
   --cli <name>    指定 CLI 工具（默认：claude）
   --model <name>  指定 AI 模型（默认：gpt-5.4）
   --reasoning-effort <level>
                    指定推理强度（默认：xhigh）
-  --skip-fill     只复制骨架，不调用 AI 填充文档
-  --resume        从上次失败的步骤继续执行，不重跑已完成步骤
-  --ultra         使用逐文件多次 AI 调用完成初始化填充
+  --skip-fill        只复制骨架，不调用 AI 填充文档
+  --resume           从上次失败的步骤继续执行，不重跑已完成步骤
+  --greenfield       按全新 agent 主导项目初始化（默认是存量仓库 adopt 模式）
+  --single-call      兼容别名；默认已经是单次 AI 调用
+  --ultra            使用逐文件多次 AI 调用完成初始化填充
+  --no-docs-review   跳过独立 docs review 步骤
 EOF
 }
 
@@ -111,6 +119,7 @@ init_state_paths() {
     STEP_DIR="${STATE_DIR}/steps"
     LOG_DIR="${STATE_DIR}/logs"
     REPORT_FILE="${STATE_DIR}/final-review.md"
+    DOCS_REVIEW_FILE="${STATE_DIR}/docs-review.md"
     FAILED_STEP_FILE="${STATE_DIR}/last_failed_step.txt"
 }
 
@@ -226,9 +235,27 @@ ensure_resume_mode_is_valid() {
 }
 
 print_resume_hint() {
+    local -a args=("--cli" "$CLI_TOOL" "--model" "$MODEL" "--reasoning-effort" "$REASONING_EFFORT")
+
+    if [[ "$INIT_MODE" == "greenfield" ]]; then
+        args+=("--greenfield")
+    fi
+
+    if [[ "$ULTRA" == true ]]; then
+        args+=("--ultra")
+    fi
+
+    if [[ "$DOCS_REVIEW_ENABLED" != true ]]; then
+        args+=("--no-docs-review")
+    fi
+
+    args+=("--resume")
+
     warn "可使用以下命令从断点继续："
     echo "  cd \"$TARGET_DIR\""
-    echo "  bash \"$SCRIPT_DIR/init.sh\" --cli \"$CLI_TOOL\" --resume"
+    printf '  bash "%s/init.sh"' "$SCRIPT_DIR"
+    printf ' "%s"' "${args[@]}"
+    printf '\n'
 }
 
 ensure_scaffold_is_valid() {
@@ -255,6 +282,68 @@ detect_cli_kind() {
             echo "generic"
             ;;
     esac
+}
+
+mode_label() {
+    if [[ "$INIT_MODE" == "greenfield" ]]; then
+        printf 'greenfield'
+    else
+        printf 'adopt'
+    fi
+}
+
+mode_intro_prompt() {
+    if [[ "$INIT_MODE" == "greenfield" ]]; then
+        cat <<'EOF'
+当前初始化模式：`greenfield`
+
+- 这是一个准备按 Agent Workflow 长期维护的新项目。
+- 文档可以明确写出后续工作流约束，但仍然只能基于仓库中已经存在的代码和配置陈述事实。
+- 不要把尚未存在的 lint/test/CI/安全机制写成已经配置完成。
+EOF
+    else
+        cat <<'EOF'
+当前初始化模式：`adopt`
+
+- 这是一个已经存在的仓库，正在接入 Agent Workflow Template。
+- 优先描述仓库当前真实状态，而不是理想中的 future state。
+- 如果质量门、CI、边界规则尚未建立，要明确写“当前未配置”或等价事实描述，不要假装已经具备。
+- 不要把历史开发过程回填成“此前一直按此 workflow 执行”。
+EOF
+    fi
+}
+
+decision_record_markdown() {
+    local today
+    today="$(date '+%Y-%m-%d')"
+
+    if [[ "$INIT_MODE" == "greenfield" ]]; then
+        cat <<EOF
+## D-001 初始化 Agent Workflow 文档体系
+- 日期：${today}
+- 状态：Accepted
+- 背景：项目需要建立结构化的 agent 工作流文档体系，以支持 AI agent 自主开发。
+- 决策：采用 Agent Workflow Template 的 AGENTS.md + docs/ + scripts/ 结构。
+- 原因：文档驱动的 SAS 架构，每个文档职责单一且解耦，workflow 状态机提供清晰的 stage 跳转逻辑，scripts/ 提供确定性检查。
+- 被拒绝方案：
+  - 纯 prompt 约束：缺乏持久化和可审计的流程文档
+  - 单 README 承载全部规则：难维护，无法结构化引用
+- 影响：后续所有 agent 开发流程按此文档体系执行。
+EOF
+    else
+        cat <<EOF
+## D-001 初始化 Agent Workflow 文档体系
+- 日期：${today}
+- 状态：Accepted
+- 背景：该仓库在已有代码和实验资产的基础上接入 Agent Workflow Template，需要先把当前事实沉淀为可维护文档，再逐步收敛到统一流程。
+- 决策：采用 Agent Workflow Template 的 AGENTS.md + docs/ + scripts/ 结构，并以“先描述现状、再逐步强化约束”的方式完成接入。
+- 原因：存量项目往往缺少完整的历史决策、质量门和边界声明，先记录现状可以减少模板与历史资产的摩擦，同时为后续增量治理提供入口。
+- 被拒绝方案：
+  - 直接按 greenfield 假设重写全部文档：容易把理想态误写成事实，误导后续 agent
+  - 仅保留 README 和临时 prompt：缺乏持久化流程约束，无法支撑后续协作和审计
+- 影响：文档会优先反映仓库当前状态；后续若补齐 lint/test/CI/边界规则，应通过正常工作流逐步更新。
+EOF
+    fi
 }
 
 script_has_unreplaced_command_placeholder() {
@@ -333,6 +422,10 @@ validate_edit_step() {
             ;;
         audit)
             [[ -s "$REPORT_FILE" ]]
+            ;;
+        docs_review)
+            [[ -s "$DOCS_REVIEW_FILE" ]] &&
+            grep -q '^# 文档复核报告$' "$DOCS_REVIEW_FILE"
             ;;
         *)
             [[ "$changed_count" -gt 0 ]] &&
@@ -434,6 +527,71 @@ run_audit_step() {
     mark_step_done "$step_id"
 }
 
+run_docs_review_step() {
+    local step_id="docs_review"
+    local title="独立复核生成后的文档"
+    local review_scope=()
+    local before_states=()
+    local after_state=""
+    local index=0
+
+    if [[ "$DOCS_REVIEW_ENABLED" != true ]]; then
+        warn "  → 跳过 ${title}（已禁用）"
+        return 0
+    fi
+
+    ensure_state_dirs
+
+    if [[ "$RESUME" == true && -f "$(step_file "$step_id")" && -s "$DOCS_REVIEW_FILE" ]]; then
+        warn "  → 跳过 ${title}（已完成）"
+        return 0
+    fi
+
+    for path in "${MANAGED_FILES[@]}"; do
+        review_scope+=("$TARGET_DIR/$path")
+    done
+
+    for path in "${review_scope[@]}"; do
+        before_states+=("$(capture_fingerprint "$path")")
+    done
+
+    info "  → ${title}"
+
+    if ! (
+        cd "$TARGET_DIR"
+        run_cli_prompt "$(docs_review_prompt)"
+    ) >"$DOCS_REVIEW_FILE" 2>"$LOG_DIR/${step_id}.log"; then
+        error "步骤失败：${title}"
+        error "日志：$LOG_DIR/${step_id}.log"
+        tail -n 20 "$LOG_DIR/${step_id}.log" || true
+        mark_step_failed "$step_id" "command_failed"
+        print_resume_hint
+        exit 1
+    fi
+
+    for index in "${!review_scope[@]}"; do
+        after_state="$(capture_fingerprint "${review_scope[$index]}")"
+        if [[ "$after_state" != "${before_states[$index]}" ]]; then
+            error "步骤未通过结果校验：${title}"
+            error "Docs review 是只读步骤，但检测到生成文件被修改。"
+            error "日志：$LOG_DIR/${step_id}.log"
+            mark_step_failed "$step_id" "readonly_violation"
+            print_resume_hint
+            exit 1
+        fi
+    done
+
+    if ! validate_edit_step "$step_id" 1 "$DOCS_REVIEW_FILE"; then
+        error "步骤未通过结果校验：${title}"
+        error "报告文件为空或缺少预期标题：$DOCS_REVIEW_FILE"
+        mark_step_failed "$step_id" "validation_failed"
+        print_resume_hint
+        exit 1
+    fi
+
+    mark_step_done "$step_id"
+}
+
 copy_template_skeleton() {
     local step_id="copy_skeleton"
 
@@ -472,6 +630,7 @@ copy_template_skeleton() {
 }
 
 overview_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库，填充 docs/overview.md。不要修改任何其他文件。
 
@@ -509,6 +668,7 @@ PROMPT
 }
 
 architecture_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库的结构和依赖关系，填充 docs/architecture.md。不要修改任何其他文件。
 
@@ -552,6 +712,7 @@ PROMPT
 }
 
 conventions_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库的代码风格和 git 习惯，填充 docs/conventions.md。不要修改任何其他文件。
 
@@ -596,6 +757,7 @@ PROMPT
 }
 
 quality_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库的测试设置，填充 docs/quality.md。不要修改任何其他文件。
 
@@ -627,17 +789,20 @@ quality_prompt() {
 - 全量测试命令
 - 仅单元测试命令（如果能区分）
 - 覆盖率命令（如果有）
+- 如果仓库当前没有自动化测试框架，至少写出一个可复现的 sanity check 命令或脚本，并明确其用途
 - 确保命令可以直接复制粘贴到终端执行
 
 ## 规则
 - "Definition of Done"部分不要修改
 - "失败处理流程"部分不要修改
 - "维护规则"部分不要修改
+- 若仓库尚未建立统一 lint/test/coverage 体系，必须明确写出“当前未配置”或等价事实描述，不要把理想状态写成既有能力
 - 无法确认的信息保留"（待填写）"
 PROMPT
 }
 
 security_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库的安全相关配置，填充 docs/security.md。不要修改任何其他文件。
 
@@ -670,11 +835,13 @@ security_prompt() {
 ## 规则
 - 绝不读取或输出 .env 文件中的实际值，只读 .env.example 或代码中的变量名
 - "安全变更规则"部分不要修改
+- 若仓库存在硬编码本地路径、模型目录、实验机专属脚本，应作为环境耦合风险写入相关区域
 - 无法确认的信息保留"（待填写）"
 PROMPT
 }
 
 progress_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库的完成状态，填充 docs/progress.md。不要修改任何其他文件。
 
@@ -715,6 +882,7 @@ PROMPT
 }
 
 backlog_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库中的待办事项，填充 docs/plan/backlog.md。不要修改任何其他文件。
 
@@ -752,6 +920,7 @@ PROMPT
 }
 
 decisions_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 在 docs/decisions.md 的"## 决策记录"区域追加第一条决策。不要修改任何其他文件。不要修改 decisions.md 中"决策记录"之前的任何内容。
 
@@ -762,21 +931,15 @@ decisions_prompt() {
 </instructions>
 
 <content-to-write>
-## D-001 初始化 Agent Workflow 文档体系
-- 日期：（填入今天的日期）
-- 状态：Accepted
-- 背景：项目需要建立结构化的 agent 工作流文档体系，以支持 AI agent 自主开发。
-- 决策：采用 Agent Workflow Template 的 AGENTS.md + docs/ + scripts/ 结构。
-- 原因：文档驱动的 SAS 架构，每个文档职责单一且解耦，workflow 状态机提供清晰的 stage 跳转逻辑，scripts/ 提供确定性检查。
-- 被拒绝方案：
-  - 纯 prompt 约束：缺乏持久化和可审计的流程文档
-  - 单 README 承载全部规则：难维护，无法结构化引用
-- 影响：后续所有 agent 开发流程按此文档体系执行。
+PROMPT
+    decision_record_markdown
+    cat <<'PROMPT'
 </content-to-write>
 PROMPT
 }
 
 scripts_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 分析当前代码库使用的 lint 工具和测试框架，更新 scripts/check_lint.sh 和 scripts/check_tests.sh。不要修改任何其他文件。
 
@@ -809,11 +972,12 @@ scripts_prompt() {
 - 确保替换后的命令可以直接在项目根目录执行
 - 不要修改脚本的其他结构（echo、set -euo pipefail 等保持不变）
 - 不要修改 scripts/check_quality.sh（它只是组合调用另外两个脚本）
+- 对存量仓库，允许保留 fallback warning，但不要伪造并不存在的 lint/test 命令
 PROMPT
 }
 
 audit_prompt() {
-    cat <<'PROMPT'
+    cat <<PROMPT
 扫描当前仓库中由 Agent Workflow Template 初始化的文档，输出一个 Markdown 清单，列出仍需要人类手动补充或确认的内容。不要修改任何文件。
 
 ## 检查范围
@@ -855,7 +1019,66 @@ audit_prompt() {
 PROMPT
 }
 
+docs_review_prompt() {
+    mode_intro_prompt
+    cat <<'PROMPT'
+你正在执行一个独立的文档复核 session。目标是审查刚由初始化流程生成的 Agent Workflow 文档，而不是补写或改写这些文档。
+
+这是只读任务。不要修改仓库中的任何文件，不要创建文件，不要运行会写文件的命令。只读取仓库和文档，然后把复核结论输出到 stdout。
+
+请重点检查以下对象：
+- AGENTS.md
+- docs/workflow.md
+- docs/overview.md
+- docs/architecture.md
+- docs/conventions.md
+- docs/decisions.md
+- docs/quality.md
+- docs/security.md
+- docs/progress.md
+- docs/blockers.md
+- docs/plan/backlog.md
+- docs/plan/current.md
+- scripts/check_lint.sh
+- scripts/check_tests.sh
+- scripts/check_quality.sh
+
+请优先寻找这些问题：
+1. 文档与代码事实不一致
+2. 文档之间互相矛盾
+3. 模板占位符、空白模板或初始化后仍不该残留的样板文本
+4. 把“理想状态/建议状态”误写成“当前已经存在的状态”
+5. 会误导后续 agent 行为的流程文档问题
+
+输出格式必须是以下 Markdown 结构：
+
+# 文档复核报告
+
+## Blocking inconsistencies
+- 只列会直接误导后续 agent 或明显与仓库事实冲突的问题
+- 如果没有，写 `- 无`
+
+## Needs human confirmation
+- 列出需要人类拍板或补充背景的信息
+- 如果没有，写 `- 无`
+
+## Nice-to-fix
+- 列出不影响初始化完成、但值得清理的文档问题
+- 如果没有，写 `- 无`
+
+## Summary
+- 用 2-4 条总结整体质量和主要风险
+
+规则：
+- 不要改文件
+- 不要替作者解释意图
+- 只基于仓库中能读到的事实给出结论
+- 每条尽量带文件路径
+PROMPT
+}
+
 single_call_prompt() {
+    mode_intro_prompt
     cat <<'PROMPT'
 你正在为一个刚初始化 Agent Workflow Template 的仓库执行一次“初始化 bootstrap”任务。
 
@@ -894,6 +1117,7 @@ single_call_prompt() {
 - 先检查根目录结构、README、包管理文件、主代码目录、测试目录、CI/脚本配置、lint 配置、git 历史和分支命名
 - 只基于代码库中能确认的事实填写，不要编造信息
 - 无法可靠确认的信息保留“（待填写）”或按模板中的保守表达处理
+- 对 adopt 模式，文档应首先陈述当前事实，不要把理想治理状态写成既有事实
 - `docs/progress.md` 必须基于实际代码、git 活动和 TODO/FIXME/HACK/XXX 注释填写
 - `docs/plan/backlog.md` 必须基于代码注释、`docs/progress.md` 和 `docs/overview.md` 中可确认线索填写
 
@@ -919,6 +1143,7 @@ single_call_prompt() {
 ### `docs/quality.md`
 - 只修改“测试栈”“测试目录”“测试命令”等待填写区域
 - 不要修改 Definition of Done、失败处理流程、维护规则
+- 如果仓库当前没有自动化测试框架，测试命令区域至少保留一个可复现的 sanity check 命令或脚本说明
 
 ### `docs/security.md`
 - 只从 `.env.example`、代码中的环境变量引用、认证代码、CI secrets 引用等提取信息
@@ -939,16 +1164,9 @@ single_call_prompt() {
 - 将以下内容作为要写入的 Markdown 正文：
 
 <content-to-write>
-## D-001 初始化 Agent Workflow 文档体系
-- 日期：（填入今天的日期）
-- 状态：Accepted
-- 背景：项目需要建立结构化的 agent 工作流文档体系，以支持 AI agent 自主开发。
-- 决策：采用 Agent Workflow Template 的 AGENTS.md + docs/ + scripts/ 结构。
-- 原因：文档驱动的 SAS 架构，每个文档职责单一且解耦，workflow 状态机提供清晰的 stage 跳转逻辑，scripts/ 提供确定性检查。
-- 被拒绝方案：
-  - 纯 prompt 约束：缺乏持久化和可审计的流程文档
-  - 单 README 承载全部规则：难维护，无法结构化引用
-- 影响：后续所有 agent 开发流程按此文档体系执行。
+PROMPT
+    decision_record_markdown
+    cat <<'PROMPT'
 </content-to-write>
 
 ### `scripts/check_lint.sh`
@@ -1054,7 +1272,7 @@ generate_audit_report() {
 }
 
 run_single_call_sequence() {
-    info "[2/2] 调用 ${CLI_TOOL} 单次完成全部填充（默认模式）..."
+    info "[2/2] 调用 ${CLI_TOOL} 单次完成全部填充（$(mode_label) 模式，默认）..."
     echo ""
 
     run_edit_step "single_call" "单次填充全部文档与检查脚本" \
@@ -1069,11 +1287,12 @@ run_single_call_sequence() {
         "$TARGET_DIR/scripts/check_lint.sh" \
         "$TARGET_DIR/scripts/check_tests.sh" -- <<<"$(single_call_prompt)"
 
+    run_docs_review_step
     run_audit_step
 }
 
 run_fill_sequence() {
-    info "[2/2] 调用 ${CLI_TOOL} 逐个填充文档..."
+    info "[2/2] 调用 ${CLI_TOOL} 逐个填充文档（$(mode_label) 模式）..."
     echo ""
 
     cd "$TARGET_DIR"
@@ -1098,6 +1317,7 @@ run_fill_sequence() {
         "$TARGET_DIR/scripts/check_lint.sh" \
         "$TARGET_DIR/scripts/check_tests.sh" -- <<<"$(scripts_prompt)"
 
+    run_docs_review_step
     run_audit_step
 }
 
@@ -1138,6 +1358,14 @@ while [[ $# -gt 0 ]]; do
             RESUME=true
             shift
             ;;
+        --adopt)
+            INIT_MODE="adopt"
+            shift
+            ;;
+        --greenfield)
+            INIT_MODE="greenfield"
+            shift
+            ;;
         --single-call)
             SINGLE_CALL=true
             ULTRA=false
@@ -1146,6 +1374,10 @@ while [[ $# -gt 0 ]]; do
         --ultra)
             ULTRA=true
             SINGLE_CALL=false
+            shift
+            ;;
+        --no-docs-review)
+            DOCS_REVIEW_ENABLED=false
             shift
             ;;
         --help|-h)
@@ -1170,6 +1402,12 @@ if [[ "$SKIP_FILL" == false ]] && ! command -v "$CLI_TOOL" >/dev/null 2>&1; then
     error "错误：未找到 ${CLI_TOOL} CLI。"
     echo "可用 --skip-fill 跳过自动填充，或 --cli <name> 指定其他工具。"
     exit 1
+fi
+
+if [[ "$ULTRA" == true ]]; then
+    SINGLE_CALL=false
+else
+    SINGLE_CALL=true
 fi
 
 init_state_paths
@@ -1205,6 +1443,13 @@ if [[ -s "$REPORT_FILE" ]]; then
     echo "自动审计报告：$REPORT_FILE"
     echo ""
     cat "$REPORT_FILE"
+    echo ""
+fi
+
+if [[ -s "$DOCS_REVIEW_FILE" ]]; then
+    echo "独立文档复核报告：$DOCS_REVIEW_FILE"
+    echo ""
+    cat "$DOCS_REVIEW_FILE"
     echo ""
 fi
 

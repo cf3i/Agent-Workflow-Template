@@ -25,7 +25,7 @@
 1. Stage 判断不明确时，先按 `docs/workflow.md` 自行判断；仍不明确时必须先问 user，澄清前不得进行代码修改或高风险操作。
 2. 架构边界违规必须先修复（由 lint/CI 拦截）。
 3. 开发前先写 `docs/plan/current.md`，开发中持续勾选。
-4. 提交前必须运行 `./scripts/check_quality.sh` 并确认 PASS。
+4. 提交前必须运行 `./scripts/check_quality.sh`，并完成至少一次主路径功能的 sanity check。
 5. 每个 Stage 结束前必须完成该 Stage 的 Exit Checklist，不得跳过。
 6. 涉及凭据、认证、敏感文件前先读 `docs/security.md`。
 7. 重要技术取舍必须追加到 `docs/decisions.md`（禁止覆写历史条目）。

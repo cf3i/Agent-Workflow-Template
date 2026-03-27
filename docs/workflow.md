@@ -68,7 +68,8 @@
 1. 按 `docs/plan/current.md` 的步骤实现代码
 2. 运行 lint → 有报错 → 修复 → 重跑，直到零报错
 3. 运行 tests → 有失败 → 修复 → 重跑，直到全部通过
-4. 每完成一个步骤，在 `docs/plan/current.md` 中勾选
+4. 对主路径功能执行至少一次 sanity check，确认功能按预期工作
+5. 每完成一个步骤，在 `docs/plan/current.md` 中勾选
 
 涉及敏感内容时：读取 `docs/security.md`。
 
@@ -77,10 +78,12 @@
 - [ ] `docs/plan/current.md` 中所有实现步骤已勾选
 - [ ] `./scripts/check_lint.sh` 通过（附输出）
 - [ ] `./scripts/check_tests.sh` 通过（附输出）
+- [ ] 主路径功能的 sanity check 已执行，并在 `docs/plan/current.md` 或 PR 描述中记录验证方式与结果
 
 ### Failure Path
 
 - 同一个 lint/test 错误修复超过 3 次仍未解决 → 写入 `docs/blockers.md`，停止，通知人类
+- sanity check 未通过或无法判断功能是否正确 → 回到 **Stage 3** 修复；若仍无法判断，停止并通知人类确认
 - 不确定实现方向是否正确 → 停止，通知人类确认
 
 → 全部通过，进入 **Stage 4**。
@@ -105,6 +108,7 @@
 
 - [ ] `./scripts/check_quality.sh` 通过（附输出）
 - [ ] `docs/quality.md` 人工自查条目全部通过
+- [ ] 主路径功能的 sanity check 结果已记录且可复现
 - [ ] git commit + push 完成
 - [ ] PR 已创建
 - [ ] `docs/progress.md` 已更新（反映新完成的功能 / 修复的问题）
