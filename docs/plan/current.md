@@ -11,6 +11,7 @@
 
 - [x] 审查 BacktrackKV docs review，识别出属于模板而非目标仓库自身的问题
 - [x] 将“主路径功能 sanity check”补充为模板的最低功能正确性验证要求
+- [x] 将 `init.sh` 调整为默认交互式向导，并保留 `--non-interactive` 与现有 flags
 - [ ] 修正 `scaffold/AGENTS.md` 与 `scaffold/docs/workflow.md`，避免在未配置质量门/架构检查时仍声称由 lint/CI 拦截
 - [ ] 修正 `scaffold/docs/decisions.md` 的维护规则，消除“只追加”与“回写旧状态”的矛盾
 - [ ] 调整 `init.sh` 的生成 prompt 与本地审计，使其更好提示子模块未初始化、占位质量门和 adopt 语义
@@ -29,6 +30,7 @@
 - [x] 新增 adopt / greenfield 分支验证
 - [x] 独立 docs review 触发与结果校验验证
 - [x] BacktrackKV 重跑验证通过
+- [x] 交互式向导烟测通过：TTY 下可选择 `adopt + skip-fill`，并能用 `--resume` 读取保存配置继续执行
 - [ ] 模板冲突修复后 BacktrackKV docs review 二次验证通过
 - [ ] `./scripts/check_quality.sh` 通过
 

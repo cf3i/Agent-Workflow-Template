@@ -6,7 +6,8 @@
 #   cd /path/to/your-repo
 #   bash /path/to/Agent-Workflow-Template/init.sh \
 #     [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] \
-#     [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review]
+#     [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review] \
+#     [--non-interactive]
 #
 # 选项：
 #   --cli <name>    指定 CLI 工具（默认：claude）
@@ -17,6 +18,7 @@
 #   --greenfield       按全新 agent 主导项目初始化（默认是存量仓库 adopt 模式）
 #   --ultra            使用逐文件多次 AI 调用完成初始化填充
 #   --no-docs-review   跳过独立 docs review 步骤
+#   --non-interactive  禁用交互式向导，仅按 flags / 默认值执行
 # ============================================================
 set -euo pipefail
 
@@ -32,6 +34,7 @@ INIT_MODE="adopt"
 SINGLE_CALL=true
 ULTRA=false
 DOCS_REVIEW_ENABLED=true
+NON_INTERACTIVE=false
 TARGET_IS_GIT_REPO=false
 
 STATE_DIR_NAME=".agent-workflow-init"
@@ -41,6 +44,16 @@ LOG_DIR=""
 REPORT_FILE=""
 DOCS_REVIEW_FILE=""
 FAILED_STEP_FILE=""
+CONFIG_FILE=""
+
+CLI_TOOL_EXPLICIT=false
+MODEL_EXPLICIT=false
+REASONING_EFFORT_EXPLICIT=false
+SKIP_FILL_EXPLICIT=false
+INIT_MODE_EXPLICIT=false
+EXECUTION_MODE_EXPLICIT=false
+DOCS_REVIEW_EXPLICIT=false
+NON_INTERACTIVE_EXPLICIT=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -70,7 +83,7 @@ usage() {
     cat <<EOF
 用法：
   cd /path/to/your-repo
-  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review]
+  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--resume] [--greenfield] [--ultra] [--no-docs-review] [--non-interactive]
 
 选项：
   --cli <name>    指定 CLI 工具（默认：claude）
@@ -83,6 +96,7 @@ usage() {
   --single-call      兼容别名；默认已经是单次 AI 调用
   --ultra            使用逐文件多次 AI 调用完成初始化填充
   --no-docs-review   跳过独立 docs review 步骤
+  --non-interactive  禁用交互式向导，仅按 flags / 默认值执行
 EOF
 }
 
@@ -114,6 +128,229 @@ confirm_or_abort() {
     fi
 }
 
+is_interactive_session() {
+    [[ "$NON_INTERACTIVE" != true ]] && [[ -t 0 && -t 1 ]]
+}
+
+default_cli_tool() {
+    if command -v codex >/dev/null 2>&1; then
+        printf 'codex\n'
+    elif command -v claude >/dev/null 2>&1; then
+        printf 'claude\n'
+    else
+        printf '%s\n' "$CLI_TOOL"
+    fi
+}
+
+prompt_mode_choice() {
+    local reply=""
+    while true; do
+        echo "请选择初始化模式："
+        echo "  1) adopt (推荐，存量仓库接入)"
+        echo "  2) greenfield (全新 agent 主导项目)"
+        read -r -p "选择 [1]: " reply
+        case "${reply:-1}" in
+            1)
+                INIT_MODE="adopt"
+                return
+                ;;
+            2)
+                INIT_MODE="greenfield"
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 1 或 2。"
+                ;;
+        esac
+    done
+}
+
+prompt_fill_choice() {
+    local reply=""
+    while true; do
+        read -r -p "是否调用 AI 自动填充文档？ (Y/n) " reply
+        case "${reply:-Y}" in
+            Y|y)
+                SKIP_FILL=false
+                return
+                ;;
+            N|n)
+                SKIP_FILL=true
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 y 或 n。"
+                ;;
+        esac
+    done
+}
+
+prompt_cli_choice() {
+    local reply=""
+    local recommended
+    recommended="$(default_cli_tool)"
+
+    while true; do
+        echo "请选择 AI CLI："
+        echo "  1) codex"
+        echo "  2) claude"
+        if [[ "$recommended" == "codex" ]]; then
+            read -r -p "选择 [1]: " reply
+            reply="${reply:-1}"
+        elif [[ "$recommended" == "claude" ]]; then
+            read -r -p "选择 [2]: " reply
+            reply="${reply:-2}"
+        else
+            read -r -p "选择 [1]: " reply
+            reply="${reply:-1}"
+        fi
+
+        case "$reply" in
+            1)
+                CLI_TOOL="codex"
+                return
+                ;;
+            2)
+                CLI_TOOL="claude"
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 1 或 2。"
+                ;;
+        esac
+    done
+}
+
+prompt_execution_mode_choice() {
+    local reply=""
+    while true; do
+        echo "请选择填充方式："
+        echo "  1) single-call (推荐，单次 AI 调用)"
+        echo "  2) ultra (逐文件多次 AI 调用)"
+        read -r -p "选择 [1]: " reply
+        case "${reply:-1}" in
+            1)
+                ULTRA=false
+                SINGLE_CALL=true
+                return
+                ;;
+            2)
+                ULTRA=true
+                SINGLE_CALL=false
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 1 或 2。"
+                ;;
+        esac
+    done
+}
+
+prompt_docs_review_choice() {
+    local reply=""
+    while true; do
+        read -r -p "是否在生成后执行独立 docs review？ (Y/n) " reply
+        case "${reply:-Y}" in
+            Y|y)
+                DOCS_REVIEW_ENABLED=true
+                return
+                ;;
+            N|n)
+                DOCS_REVIEW_ENABLED=false
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 y 或 n。"
+                ;;
+        esac
+    done
+}
+
+prompt_codex_profile_choice() {
+    local reply=""
+    while true; do
+        read -r -p "是否使用推荐的 Codex 配置 gpt-5.4 / xhigh？ (Y/n) " reply
+        case "${reply:-Y}" in
+            Y|y)
+                MODEL="gpt-5.4"
+                REASONING_EFFORT="xhigh"
+                return
+                ;;
+            N|n)
+                read -r -p "请输入 model [${MODEL}]: " reply
+                MODEL="${reply:-$MODEL}"
+                read -r -p "请输入 reasoning effort [${REASONING_EFFORT}]: " reply
+                REASONING_EFFORT="${reply:-$REASONING_EFFORT}"
+                return
+                ;;
+            *)
+                warn "无效选择，请输入 y 或 n。"
+                ;;
+        esac
+    done
+}
+
+print_configuration_summary() {
+    echo ""
+    echo "将使用以下配置："
+    echo "  - 目标目录: ${TARGET_DIR}"
+    echo "  - 模式: ${INIT_MODE}"
+    if [[ "$SKIP_FILL" == true ]]; then
+        echo "  - 自动填充: 关闭 (--skip-fill)"
+    else
+        echo "  - CLI: ${CLI_TOOL}"
+        echo "  - 填充方式: $([[ "$ULTRA" == true ]] && printf 'ultra' || printf 'single-call')"
+        echo "  - docs review: $([[ "$DOCS_REVIEW_ENABLED" == true ]] && printf '开启' || printf '关闭')"
+        if [[ "$(detect_cli_kind)" == "codex" ]]; then
+            echo "  - model: ${MODEL}"
+            echo "  - reasoning: ${REASONING_EFFORT}"
+        fi
+    fi
+    echo ""
+}
+
+run_interactive_setup() {
+    if ! is_interactive_session; then
+        return
+    fi
+
+    if [[ "$RESUME" == true ]]; then
+        return
+    fi
+
+    info "未提供完整参数，进入交互式初始化向导。"
+
+    if [[ "$INIT_MODE_EXPLICIT" != true ]]; then
+        prompt_mode_choice
+    fi
+
+    if [[ "$SKIP_FILL_EXPLICIT" != true ]]; then
+        prompt_fill_choice
+    fi
+
+    if [[ "$SKIP_FILL" != true ]]; then
+        if [[ "$CLI_TOOL_EXPLICIT" != true ]]; then
+            CLI_TOOL="$(default_cli_tool)"
+            prompt_cli_choice
+        fi
+
+        if [[ "$EXECUTION_MODE_EXPLICIT" != true ]]; then
+            prompt_execution_mode_choice
+        fi
+
+        if [[ "$DOCS_REVIEW_EXPLICIT" != true ]]; then
+            prompt_docs_review_choice
+        fi
+
+        if [[ "$(detect_cli_kind)" == "codex" ]] && [[ "$MODEL_EXPLICIT" != true && "$REASONING_EFFORT_EXPLICIT" != true ]]; then
+            prompt_codex_profile_choice
+        fi
+    fi
+
+    print_configuration_summary
+    confirm_or_abort "是否按以上配置开始初始化？"
+}
+
 init_state_paths() {
     STATE_DIR="${TARGET_DIR}/${STATE_DIR_NAME}"
     STEP_DIR="${STATE_DIR}/steps"
@@ -121,10 +358,86 @@ init_state_paths() {
     REPORT_FILE="${STATE_DIR}/final-review.md"
     DOCS_REVIEW_FILE="${STATE_DIR}/docs-review.md"
     FAILED_STEP_FILE="${STATE_DIR}/last_failed_step.txt"
+    CONFIG_FILE="${STATE_DIR}/config.env"
 }
 
 ensure_state_dirs() {
     mkdir -p "$STEP_DIR" "$LOG_DIR"
+}
+
+save_run_config() {
+    ensure_state_dirs
+    cat > "$CONFIG_FILE" <<EOF
+CLI_TOOL=$(printf '%q' "$CLI_TOOL")
+MODEL=$(printf '%q' "$MODEL")
+REASONING_EFFORT=$(printf '%q' "$REASONING_EFFORT")
+SKIP_FILL=${SKIP_FILL}
+INIT_MODE=$(printf '%q' "$INIT_MODE")
+SINGLE_CALL=${SINGLE_CALL}
+ULTRA=${ULTRA}
+DOCS_REVIEW_ENABLED=${DOCS_REVIEW_ENABLED}
+NON_INTERACTIVE=${NON_INTERACTIVE}
+EOF
+}
+
+load_saved_config() {
+    local line=""
+    local key=""
+    local value=""
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return
+    fi
+
+    while IFS='=' read -r key value; do
+        case "$key" in
+            CLI_TOOL)
+                if [[ "$CLI_TOOL_EXPLICIT" != true ]]; then
+                    eval "CLI_TOOL=${value}"
+                fi
+                ;;
+            MODEL)
+                if [[ "$MODEL_EXPLICIT" != true ]]; then
+                    eval "MODEL=${value}"
+                fi
+                ;;
+            REASONING_EFFORT)
+                if [[ "$REASONING_EFFORT_EXPLICIT" != true ]]; then
+                    eval "REASONING_EFFORT=${value}"
+                fi
+                ;;
+            SKIP_FILL)
+                if [[ "$SKIP_FILL_EXPLICIT" != true ]]; then
+                    SKIP_FILL="$value"
+                fi
+                ;;
+            INIT_MODE)
+                if [[ "$INIT_MODE_EXPLICIT" != true ]]; then
+                    eval "INIT_MODE=${value}"
+                fi
+                ;;
+            SINGLE_CALL)
+                if [[ "$EXECUTION_MODE_EXPLICIT" != true ]]; then
+                    SINGLE_CALL="$value"
+                fi
+                ;;
+            ULTRA)
+                if [[ "$EXECUTION_MODE_EXPLICIT" != true ]]; then
+                    ULTRA="$value"
+                fi
+                ;;
+            DOCS_REVIEW_ENABLED)
+                if [[ "$DOCS_REVIEW_EXPLICIT" != true ]]; then
+                    DOCS_REVIEW_ENABLED="$value"
+                fi
+                ;;
+            NON_INTERACTIVE)
+                if [[ "$NON_INTERACTIVE_EXPLICIT" != true ]]; then
+                    NON_INTERACTIVE="$value"
+                fi
+                ;;
+        esac
+    done < "$CONFIG_FILE"
 }
 
 step_file() {
@@ -1330,6 +1643,7 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             CLI_TOOL="$2"
+            CLI_TOOL_EXPLICIT=true
             shift 2
             ;;
         --model)
@@ -1339,6 +1653,7 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             MODEL="$2"
+            MODEL_EXPLICIT=true
             shift 2
             ;;
         --reasoning-effort)
@@ -1348,10 +1663,12 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             REASONING_EFFORT="$2"
+            REASONING_EFFORT_EXPLICIT=true
             shift 2
             ;;
         --skip-fill)
             SKIP_FILL=true
+            SKIP_FILL_EXPLICIT=true
             shift
             ;;
         --resume)
@@ -1360,24 +1677,39 @@ while [[ $# -gt 0 ]]; do
             ;;
         --adopt)
             INIT_MODE="adopt"
+            INIT_MODE_EXPLICIT=true
             shift
             ;;
         --greenfield)
             INIT_MODE="greenfield"
+            INIT_MODE_EXPLICIT=true
             shift
             ;;
         --single-call)
             SINGLE_CALL=true
             ULTRA=false
+            EXECUTION_MODE_EXPLICIT=true
             shift
             ;;
         --ultra)
             ULTRA=true
             SINGLE_CALL=false
+            EXECUTION_MODE_EXPLICIT=true
             shift
             ;;
         --no-docs-review)
             DOCS_REVIEW_ENABLED=false
+            DOCS_REVIEW_EXPLICIT=true
+            shift
+            ;;
+        --docs-review)
+            DOCS_REVIEW_ENABLED=true
+            DOCS_REVIEW_EXPLICIT=true
+            shift
+            ;;
+        --non-interactive)
+            NON_INTERACTIVE=true
+            NON_INTERACTIVE_EXPLICIT=true
             shift
             ;;
         --help|-h)
@@ -1398,11 +1730,15 @@ if [[ "$SCRIPT_DIR" == "$TARGET_DIR" ]]; then
     exit 1
 fi
 
-if [[ "$SKIP_FILL" == false ]] && ! command -v "$CLI_TOOL" >/dev/null 2>&1; then
-    error "错误：未找到 ${CLI_TOOL} CLI。"
-    echo "可用 --skip-fill 跳过自动填充，或 --cli <name> 指定其他工具。"
-    exit 1
+init_state_paths
+ensure_scaffold_is_valid
+ensure_resume_mode_is_valid
+
+if [[ "$RESUME" == true ]]; then
+    load_saved_config
 fi
+
+run_interactive_setup
 
 if [[ "$ULTRA" == true ]]; then
     SINGLE_CALL=false
@@ -1410,9 +1746,13 @@ else
     SINGLE_CALL=true
 fi
 
-init_state_paths
-ensure_scaffold_is_valid
-ensure_resume_mode_is_valid
+if [[ "$SKIP_FILL" == false ]] && ! command -v "$CLI_TOOL" >/dev/null 2>&1; then
+    error "错误：未找到 ${CLI_TOOL} CLI。"
+    echo "可用 --skip-fill 跳过自动填充，或 --cli <name> 指定其他工具。"
+    exit 1
+fi
+
+save_run_config
 
 if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     TARGET_IS_GIT_REPO=true
