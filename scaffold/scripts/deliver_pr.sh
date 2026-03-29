@@ -126,6 +126,7 @@ EOF
 emit_pr_info() {
     local ref="$1"
     local repo="$2"
+    local merge_commit_sha
 
     echo "PR_NUMBER=$(gh pr view "$ref" --repo "$repo" --json number --jq '.number')"
     echo "PR_URL=$(gh pr view "$ref" --repo "$repo" --json url --jq '.url')"
@@ -133,7 +134,8 @@ emit_pr_info() {
     echo "PR_HEAD=$(gh pr view "$ref" --repo "$repo" --json headRefName --jq '.headRefName')"
     echo "PR_BASE=$(gh pr view "$ref" --repo "$repo" --json baseRefName --jq '.baseRefName')"
     echo "AUTO_MERGE_ENABLED=$(gh pr view "$ref" --repo "$repo" --json autoMergeRequest --jq '.autoMergeRequest != null')"
-    echo "MERGE_COMMIT_SHA=$(gh pr view "$ref" --repo "$repo" --json mergeCommit --jq '.mergeCommit.oid // \"\"')"
+    merge_commit_sha="$(gh pr view "$ref" --repo "$repo" --json mergeCommit --jq '.mergeCommit.oid // ""' | tr -d '\n')"
+    echo "MERGE_COMMIT_SHA=$merge_commit_sha"
 }
 
 ensure_branch_pushed() {
