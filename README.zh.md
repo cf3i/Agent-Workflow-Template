@@ -1,10 +1,10 @@
 # Agent Workflow Template
 
-🌐 [English](README.en.md) | [中文](README.zh.md)
+🌐 [English](README.en.md)
 
-一个把 AI agent 开发流程拆成”初始化脚手架 + 文档状态机 + issue 级累积回归”的模板仓库。
+一个把 AI agent 开发流程拆成"初始化脚手架 + 文档状态机 + issue 级累积回归"的模板仓库。
 
-它解决的不是”怎么写 prompt”，而是”怎么把 agent 的工作流程变成可重复执行、可验证、可中断恢复的工程系统”。
+它解决的不是"怎么写 prompt"，而是"怎么把 agent 的工作流程变成可重复执行、可验证、可中断恢复的工程系统"。
 
 ## 实仓验证
 
@@ -12,7 +12,7 @@
 
 - 验证日期：2026-03-29
 - 目标仓库：[cf3i/MiniAVLtree](https://github.com/cf3i/MiniAVLtree)
-- 验证任务：在 `docs/plan/backlog.md` 中新增“为 AVL 树新增 HTML 可视化页面”
+- 验证任务：在 `docs/plan/backlog.md` 中新增"为 AVL 树新增 HTML 可视化页面"
 - Stage 2：按规则创建独立工作分支 `codex/2-html-avl-visualizer`
 - Stage 4：通过 `bash scripts/deliver_pr.sh ensure --base main` 创建 PR [#2](https://github.com/cf3i/MiniAVLtree/pull/2)
 - Stage 6：通过 `bash scripts/deliver_pr.sh merge --merge-method squash` 完成最终 merge
@@ -57,14 +57,15 @@ bash /path/to/Agent-Workflow-Template/init.sh \
 
 | 参数 | 作用 |
 | --- | --- |
-| `--adopt` | 接入一个已经存在的仓库，文档优先描述“当前事实” |
+| `--adopt` | 接入一个已经存在的仓库，文档优先描述"当前事实" |
 | `--greenfield` | 面向全新项目初始化 |
 | `--skip-fill` | 只复制骨架，不调用 AI 填充文档 |
-| `--cli <claude|codex>` | 指定初始化时调用的 CLI |
+| `--cli <claude\|codex>` | 指定初始化时调用的 CLI |
 | `--model <name>` | 给 `codex` 指定模型 |
 | `--reasoning-effort <level>` | 给 `codex` 指定推理强度 |
 | `--single-call` | 用一次 AI 调用填完所有文档 |
 | `--ultra` | 按文件分步调用 AI 填文档 |
+| `--lang <zh\|en>` | 选择文档语言（默认：zh） |
 | `--docs-review` / `--no-docs-review` | 是否额外做一轮只读文档复核 |
 | `--non-interactive` | 禁用交互式向导 |
 
@@ -101,7 +102,7 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 
 ### 2.5 开发一个新任务时，先写 `backlog.md`
 
-这个模板里，“要开发什么”的正式入口不是直接改代码，也不是先写 `current.md`，而是先把任务写进 `docs/plan/backlog.md`。
+这个模板里，"要开发什么"的正式入口不是直接改代码，也不是先写 `current.md`，而是先把任务写进 `docs/plan/backlog.md`。
 
 推荐顺序：
 
@@ -115,9 +116,9 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 
 角色分工是：
 
-- `docs/plan/backlog.md`：定义“接下来要做什么”
-- `docs/plan/current.md`：定义“当前这个 issue 怎么一步步做”
-- `issue_test/<issue_id>.sh`：定义“这个 issue 做完后怎么验收”
+- `docs/plan/backlog.md`：定义"接下来要做什么"
+- `docs/plan/current.md`：定义"当前这个 issue 怎么一步步做"
+- `issue_test/<issue_id>.sh`：定义"这个 issue 做完后怎么验收"
 
 也就是说，`backlog.md` 是开发入口，`current.md` 是执行中计划，`issue_test` 是验收脚本。
 
@@ -127,7 +128,7 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 
 | 类别 | 处理方式 | 文件 |
 | --- | --- | --- |
-| 固定骨架 | 直接从 `scaffold/` 复制 | `docs/stage.lock`、`docs/workflow/stage*.md`、`docs/wisdom.md`、`docs/antipatterns.md`、`docs/blockers.md`、`docs/plan/current.md`、`docs/plan/archive/README.md`、`issue_test/README.md`、`scripts/build_context.py`、`scripts/run_issue_tests.sh`、`scripts/deliver_pr.sh` |
+| 固定骨架 | 直接从 `scaffold/<lang>/` 复制 | `docs/stage.lock`、`docs/workflow/stage*.md`、`docs/wisdom.md`、`docs/antipatterns.md`、`docs/blockers.md`、`docs/plan/current.md`、`docs/plan/archive/README.md`、`issue_test/README.md`、`scripts/build_context.py`、`scripts/run_issue_tests.sh`、`scripts/deliver_pr.sh` |
 | AI 填充 | 先复制模板，再调用 AI 按目标仓库事实填充 | `docs/overview.md`、`docs/architecture.md`、`docs/conventions.md`、`docs/quality.md`、`docs/security.md`、`docs/progress.md`、`docs/plan/backlog.md` |
 | 脚本直写 | 复制后由脚本替换占位符 | `docs/decisions.md` 中的 `D-001` 日期和初始化背景 |
 | 延后复制 | 在 AI 填充结束后再复制，避免影响初始化 prompt | `AGENTS.md` |
@@ -145,7 +146,7 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 1. 模板层：`init.sh + scaffold/`
 2. 运行层：被初始化到目标仓库中的 `AGENTS.md + docs/ + issue_test/ + scripts/`
 
-模板层负责“生成运行系统”，运行层负责“驱动 agent 工作”。
+模板层负责"生成运行系统"，运行层负责"驱动 agent 工作"。
 
 ### 顶层结构
 
@@ -153,10 +154,16 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 Agent-Workflow-Template/
 ├── init.sh
 ├── scaffold/
-│   ├── AGENTS.md
-│   ├── docs/
-│   ├── issue_test/
-│   └── scripts/
+│   ├── zh/          ← 中文 scaffold 文件
+│   │   ├── AGENTS.md
+│   │   ├── docs/
+│   │   ├── issue_test/
+│   │   └── scripts/
+│   └── en/          ← 英文 scaffold 文件
+│       ├── AGENTS.md
+│       ├── docs/
+│       ├── issue_test/
+│       └── scripts/
 ├── docs/
 ├── issue_test/
 └── scripts/
@@ -216,22 +223,22 @@ flowchart LR
 
 ## `scaffold/` 是什么
 
-`scaffold/` 不是示例代码目录，它是初始化时的“文件母版”。
+`scaffold/` 不是示例代码目录，它是初始化时的"文件母版"。
 
-初始化目标仓库时，`init.sh` 不会读取根目录下当前运行中的 `docs/` 作为源，而是严格从 `scaffold/` 拿模板文件。
+初始化目标仓库时，`init.sh` 不会读取根目录下当前运行中的 `docs/` 作为源，而是严格从 `scaffold/<lang>/` 拿模板文件。
 
-`scaffold/` 里的内容可以分成三类：
+`scaffold/<lang>/` 里的内容可以分成三类：
 
 | 类别 | 典型文件 | 用途 |
 | --- | --- | --- |
-| 状态机骨架 | `scaffold/AGENTS.md`、`scaffold/docs/stage.lock`、`scaffold/docs/workflow/stage*.md` | 定义 agent 的固定运行协议 |
-| 项目事实模板 | `scaffold/docs/overview.md`、`scaffold/docs/architecture.md`、`scaffold/docs/conventions.md`、`scaffold/docs/quality.md`、`scaffold/docs/security.md`、`scaffold/docs/progress.md`、`scaffold/docs/plan/backlog.md` | 初始化时由 AI 根据目标仓库内容填充 |
-| Harness 脚本 | `scaffold/scripts/build_context.py`、`scaffold/scripts/run_issue_tests.sh`、`scaffold/issue_test/README.md` | 把“读什么”和“怎么验证”变成固定脚本 |
+| 状态机骨架 | `AGENTS.md`、`docs/stage.lock`、`docs/workflow/stage*.md` | 定义 agent 的固定运行协议 |
+| 项目事实模板 | `docs/overview.md`、`docs/architecture.md`、`docs/conventions.md`、`docs/quality.md`、`docs/security.md`、`docs/progress.md`、`docs/plan/backlog.md` | 初始化时由 AI 根据目标仓库内容填充 |
+| Harness 脚本 | `scripts/build_context.py`、`scripts/run_issue_tests.sh`、`issue_test/README.md` | 把"读什么"和"怎么验证"变成固定脚本 |
 
 换句话说：
 
-- `scaffold/` 决定“新仓库会被初始化成什么样”
-- `docs/` 决定“当前这个仓库现在是什么状态”
+- `scaffold/` 决定"新仓库会被初始化成什么样"
+- `docs/` 决定"当前这个仓库现在是什么状态"
 
 ## 运行模型
 
@@ -337,7 +344,7 @@ flowchart TD
 
 ### Stage 2: Task Planning
 
-目标：从 backlog 中选一个 issue，把它转成“可执行计划 + 可执行测试”。
+目标：从 backlog 中选一个 issue，把它转成"可执行计划 + 可执行测试"。
 
 流程：
 
@@ -371,7 +378,7 @@ flowchart TD
 
 ### Stage 4: Delivery & Verification
 
-目标：把“代码能跑”变成“可以交付”。
+目标：把"代码能跑"变成"可以交付"。
 
 流程：
 
@@ -379,14 +386,14 @@ flowchart TD
 2. 按 `docs/quality.md` 做人工自查
 3. 创建可交付的本地 commit
 4. 执行 `bash scripts/deliver_pr.sh ensure --base <base-branch>`，推送当前 issue 分支并创建或复用 PR
-5. 如果远端交付受网络、权限或宿主环境限制，可以降级为“本地交付 + 人工 handoff”
+5. 如果远端交付受网络、权限或宿主环境限制，可以降级为"本地交付 + 人工 handoff"
 6. 更新 `docs/progress.md`
 7. 归档 `docs/plan/current.md` 到 `docs/plan/archive/<issue_id>.md`，写入 PR URL 或 handoff 信息
 8. 清空并重置 `docs/plan/current.md`
 9. 把对应 backlog 条目标为 `[x]`
 10. 更新 `docs/stage.lock` 到 Stage 5
 
-这里的关键不是“Stage 4 就要 merge 成功”，而是“必须先形成可复现、可 handoff 的交付状态，并把 PR 准备好交给 Stage 6 收口”。
+这里的关键不是"Stage 4 就要 merge 成功"，而是"必须先形成可复现、可 handoff 的交付状态，并把 PR 准备好交给 Stage 6 收口"。
 
 ### Stage 5: Reflection
 
@@ -401,7 +408,7 @@ flowchart TD
 5. 如有必要，补充 `docs/decisions.md`、`docs/architecture.md`、`docs/conventions.md`
 6. 更新 `docs/stage.lock` 到 Stage 6
 
-这个阶段的产出不是功能，而是“下次做类似问题时不要重新踩坑”。
+这个阶段的产出不是功能，而是"下次做类似问题时不要重新踩坑"。
 
 ### Stage 6: Entropy Check
 
@@ -419,7 +426,7 @@ flowchart TD
 8. 若 merge 因环境或权限受阻，则把 handoff 追加写进归档后结束
 9. 如果改了代码，跳回 Stage 3，再走一遍实现到交付的闭环
 
-因此，Stage 6 不是“收尾文书工作”，而是整个状态机里最后一道一致性检查和最终 merge 收口点。
+因此，Stage 6 不是"收尾文书工作"，而是整个状态机里最后一道一致性检查和最终 merge 收口点。
 
 ## 这个模板的核心约束
 

@@ -33,6 +33,7 @@ SINGLE_CALL=true
 ULTRA=false
 DOCS_REVIEW_ENABLED=true
 NON_INTERACTIVE=false
+LANG_CHOICE="zh"
 
 STATE_DIR_NAME=".git/.agent-workflow-init"
 STATE_DIR=""
@@ -48,6 +49,7 @@ INIT_MODE_EXPLICIT=false
 EXECUTION_MODE_EXPLICIT=false
 DOCS_REVIEW_EXPLICIT=false
 NON_INTERACTIVE_EXPLICIT=false
+LANG_EXPLICIT=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -84,21 +86,22 @@ MANAGED_FILES=(
 
 usage() {
     cat <<EOF
-用法：
+用法 / Usage:
   cd /path/to/your-repo
-  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--greenfield] [--ultra] [--no-docs-review] [--non-interactive]
+  bash /path/to/Agent-Workflow-Template/init.sh [--cli <claude|codex>] [--model <name>] [--reasoning-effort <level>] [--skip-fill] [--greenfield] [--ultra] [--no-docs-review] [--lang <zh|en>] [--non-interactive]
 
-选项：
-  --cli <name>    指定 CLI 工具（默认：claude）
-  --model <name>  指定 AI 模型（默认：gpt-5.4）
+选项 / Options:
+  --cli <name>    指定 CLI 工具（默认：claude）/ Specify CLI tool (default: claude)
+  --model <name>  指定 AI 模型（默认：gpt-5.4）/ Specify AI model (default: gpt-5.4)
   --reasoning-effort <level>
-                   指定推理强度（默认：xhigh）
-  --skip-fill        只复制骨架，不调用 AI 填充文档
-  --greenfield       按全新 agent 主导项目初始化（默认是存量仓库 adopt 模式）
-  --single-call      兼容别名；默认已经是单次 AI 调用
-  --ultra            使用逐文件多次 AI 调用完成初始化填充
-  --no-docs-review   跳过独立 docs review 步骤
-  --non-interactive  禁用交互式向导，仅按 flags / 默认值执行
+                   指定推理强度（默认：xhigh）/ Specify reasoning effort (default: xhigh)
+  --skip-fill        只复制骨架，不调用 AI 填充文档 / Copy skeleton only, skip AI fill
+  --greenfield       按全新 agent 主导项目初始化 / Initialize for a brand-new project
+  --single-call      兼容别名；默认已经是单次 AI 调用 / Compat alias; single AI call is already the default
+  --ultra            使用逐文件多次 AI 调用完成初始化填充 / Fill per-file using multiple AI calls
+  --no-docs-review   跳过独立 docs review 步骤 / Skip independent docs review step
+  --lang <zh|en>     选择文档语言（默认：zh）/ Choose document language (default: zh)
+  --non-interactive  禁用交互式向导，仅按 flags / 默认值执行 / Disable interactive wizard
 EOF
 }
 
@@ -142,6 +145,29 @@ default_cli_tool() {
     else
         printf '%s\n' "$CLI_TOOL"
     fi
+}
+
+prompt_lang_choice() {
+    local reply=""
+    while true; do
+        echo "Select document language / 选择文档语言："
+        echo "  1) zh  中文（默认 / default）"
+        echo "  2) en  English"
+        read -r -p "Select / 选择 [1]: " reply
+        case "${reply:-1}" in
+            1)
+                LANG_CHOICE="zh"
+                return
+                ;;
+            2)
+                LANG_CHOICE="en"
+                return
+                ;;
+            *)
+                warn "Invalid choice / 无效选择，请输入 1 或 2。"
+                ;;
+        esac
+    done
 }
 
 prompt_mode_choice() {
@@ -294,15 +320,16 @@ prompt_codex_profile_choice() {
 
 print_configuration_summary() {
     echo ""
-    echo "将使用以下配置："
-    echo "  - 目标目录: ${TARGET_DIR}"
-    echo "  - 模式: ${INIT_MODE}"
+    echo "将使用以下配置 / Configuration:"
+    echo "  - 目标目录 / Target dir: ${TARGET_DIR}"
+    echo "  - 语言 / Language: ${LANG_CHOICE}"
+    echo "  - 模式 / Mode: ${INIT_MODE}"
     if [[ "$SKIP_FILL" == true ]]; then
-        echo "  - 自动填充: 关闭 (--skip-fill)"
+        echo "  - 自动填充 / Auto-fill: 关闭 (--skip-fill)"
     else
         echo "  - CLI: ${CLI_TOOL}"
-        echo "  - 填充方式: $([[ "$ULTRA" == true ]] && printf 'ultra' || printf 'single-call')"
-        echo "  - docs review: $([[ "$DOCS_REVIEW_ENABLED" == true ]] && printf '开启' || printf '关闭')"
+        echo "  - 填充方式 / Fill mode: $([[ "$ULTRA" == true ]] && printf 'ultra' || printf 'single-call')"
+        echo "  - docs review: $([[ "$DOCS_REVIEW_ENABLED" == true ]] && printf '开启 / enabled' || printf '关闭 / disabled')"
         if [[ "$(detect_cli_kind)" == "codex" ]]; then
             echo "  - model: ${MODEL}"
             echo "  - reasoning: ${REASONING_EFFORT}"
@@ -317,6 +344,10 @@ run_interactive_setup() {
     fi
 
     info "未提供完整参数，进入交互式初始化向导。"
+
+    if [[ "$LANG_EXPLICIT" != true ]]; then
+        prompt_lang_choice
+    fi
 
     if [[ "$INIT_MODE_EXPLICIT" != true ]]; then
         prompt_mode_choice
@@ -478,6 +509,14 @@ mode_label() {
         printf 'greenfield'
     else
         printf 'adopt'
+    fi
+}
+
+lang_fill_instruction() {
+    if [[ "$LANG_CHOICE" == "en" ]]; then
+        printf 'IMPORTANT: Write all content in English. All section titles, descriptions, placeholder text, and values must be in English.\n\n'
+    else
+        printf 'IMPORTANT: 请用中文书写所有内容。所有标题、说明、占位文本和内容值均使用中文。\n\n'
     fi
 }
 
@@ -773,6 +812,7 @@ copy_post_fill_scaffold_files() {
 }
 
 overview_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -812,6 +852,7 @@ PROMPT
 }
 
 architecture_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -857,6 +898,7 @@ PROMPT
 }
 
 conventions_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -903,6 +945,7 @@ PROMPT
 }
 
 quality_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -942,6 +985,7 @@ PROMPT
 }
 
 security_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -982,6 +1026,7 @@ PROMPT
 }
 
 progress_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -1024,6 +1069,7 @@ PROMPT
 }
 
 backlog_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -1165,6 +1211,7 @@ PROMPT
 }
 
 single_call_prompt() {
+    lang_fill_instruction
     mode_intro_prompt
     bootstrap_edit_guard_prompt
     cat <<'PROMPT'
@@ -1459,6 +1506,25 @@ while [[ $# -gt 0 ]]; do
             NON_INTERACTIVE_EXPLICIT=true
             shift
             ;;
+        --lang)
+            if [[ $# -lt 2 ]]; then
+                error "参数 --lang 需要一个值（zh 或 en）。"
+                usage
+                exit 1
+            fi
+            case "$2" in
+                zh|en)
+                    LANG_CHOICE="$2"
+                    LANG_EXPLICIT=true
+                    ;;
+                *)
+                    error "参数 --lang 的值必须是 zh 或 en，当前值：$2"
+                    usage
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
         --help|-h)
             usage
             exit 0
@@ -1478,9 +1544,13 @@ if [[ "$SCRIPT_DIR" == "$TARGET_DIR" ]]; then
 fi
 
 init_state_paths
-ensure_scaffold_is_valid
 
 run_interactive_setup
+
+# Set language-specific scaffold directory after interactive setup resolves LANG_CHOICE
+SCAFFOLD_DIR="${SCRIPT_DIR}/scaffold/${LANG_CHOICE}"
+
+ensure_scaffold_is_valid
 
 if [[ "$SKIP_FILL" == false ]] && [[ "$(detect_cli_kind)" == "codex" ]]; then
     if [[ "$EXECUTION_MODE_EXPLICIT" != true ]]; then
