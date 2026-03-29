@@ -27,16 +27,17 @@ git commit   # message 格式见 docs/conventions.md
 - 若当前 issue 的业务改动已经在本地提交完成，不要制造空提交
 - 本步骤的目标是确保存在一个可 handoff 的本地 commit
 
-### Step 4：尝试远端交付
+### Step 4：创建或更新 PR（本阶段不 merge）
 
-依次执行：
+优先执行：
 
 ```bash
-git push
-gh pr create   # 若项目使用 GitHub 且 gh 可用
+bash scripts/deliver_pr.sh ensure --base <base-branch>
 ```
 
-- push / PR 成功 → 在归档记录中写入 PR URL，继续
+- 该脚本会先推送当前分支，再创建或复用对应 PR
+- 若需要自定义标题或正文，可额外传 `--title`、`--body-file`
+- PR 已存在或新建成功 → 在归档记录中写入 PR URL，并标记“Stage 6 将尝试最终 merge”，继续
 - 若因为网络、DNS、权限、宿主沙箱限制或 `gh` 不可用导致失败，最多重试 3 次，然后转为 **本地交付 + 人工 handoff**
 - 本地交付 + 人工 handoff 不是失败：只要本地 commit 已存在且验证通过，就继续后续步骤
 - handoff 记录必须包含：
@@ -57,7 +58,7 @@ cp docs/plan/current.md docs/plan/archive/<meta.issue_id>.md
 
 - 归档内容中必须保留当前 issue 对应的测试脚本路径：`issue_test/<meta.issue_id>.sh`
 - 归档内容中必须补充交付状态：
-  - 已创建 PR：写明 PR URL
+  - 已创建或复用 PR：写明 PR URL，并写明“Stage 6 将尝试最终 merge”
   - 本地交付 + 人工 handoff：写明本地 commit hash、失败原因和人工下一步
 - 不要移动或删除 `issue_test/<meta.issue_id>.sh`；它必须留在 `issue_test/` 里参与后续回归
 
@@ -104,7 +105,7 @@ previous: stage4
 - [ ] `docs/quality.md` 人工自查条目全部通过
 - [ ] 已存在可交付的本地 commit
 - [ ] 已完成以下两者之一：
-  - 远端交付完成（push 成功，且若适用已创建 PR）
+  - PR 已创建或复用，且归档中已记录 PR URL 与“Stage 6 将尝试最终 merge”
   - 归档中已记录“本地交付 + 人工 handoff”的 commit hash、失败原因和下一步
 - [ ] `docs/progress.md` 已更新
 - [ ] `docs/plan/archive/<meta.issue_id>.md` 已创建
@@ -118,4 +119,4 @@ previous: stage4
 
 - `scripts/run_issue_tests.sh` FAIL → 更新 stage.lock（current: stage3, status: in_progress），回到 Stage 3
 - 无法形成可复现的本地交付提交 → 写入 `docs/blockers.md`，更新 stage.lock（status: failed），停止，通知人类
-- 无法判断远端失败是否已经完整转写为 handoff 信息 → 写入 `docs/blockers.md`，更新 stage.lock（status: failed），停止，通知人类
+- 无法判断 PR 创建失败是否已经完整转写为 handoff 信息 → 写入 `docs/blockers.md`，更新 stage.lock（status: failed），停止，通知人类

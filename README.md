@@ -111,7 +111,7 @@ bash scripts/run_issue_tests.sh --exclude issue_test/<issue_id>.sh
 
 | 类别 | 处理方式 | 文件 |
 | --- | --- | --- |
-| 固定骨架 | 直接从 `scaffold/` 复制 | `docs/stage.lock`、`docs/workflow/stage*.md`、`docs/wisdom.md`、`docs/antipatterns.md`、`docs/blockers.md`、`docs/plan/current.md`、`docs/plan/archive/README.md`、`issue_test/README.md`、`scripts/build_context.py`、`scripts/run_issue_tests.sh` |
+| 固定骨架 | 直接从 `scaffold/` 复制 | `docs/stage.lock`、`docs/workflow/stage*.md`、`docs/wisdom.md`、`docs/antipatterns.md`、`docs/blockers.md`、`docs/plan/current.md`、`docs/plan/archive/README.md`、`issue_test/README.md`、`scripts/build_context.py`、`scripts/run_issue_tests.sh`、`scripts/deliver_pr.sh` |
 | AI 填充 | 先复制模板，再调用 AI 按目标仓库事实填充 | `docs/overview.md`、`docs/architecture.md`、`docs/conventions.md`、`docs/quality.md`、`docs/security.md`、`docs/progress.md`、`docs/plan/backlog.md` |
 | 脚本直写 | 复制后由脚本替换占位符 | `docs/decisions.md` 中的 `D-001` 日期和初始化背景 |
 | 延后复制 | 在 AI 填充结束后再复制，避免影响初始化 prompt | `AGENTS.md` |
@@ -159,7 +159,7 @@ Agent-Workflow-Template/
 | Control 层 | `AGENTS.md`、`docs/stage.lock`、`docs/workflow/stage*.md` | 定义 agent 启动协议、当前状态和 Stage 跳转规则 |
 | Context 层 | `docs/overview.md`、`architecture.md`、`conventions.md`、`quality.md`、`security.md`、`progress.md`、`decisions.md`、`blockers.md`、`wisdom.md`、`antipatterns.md`、`docs/plan/*` | 提供项目事实、规则、计划、历史和阻塞信息 |
 | Harness 层 | `scripts/build_context.py`、`issue_test/*.sh`、`scripts/run_issue_tests.sh` | 机械装载上下文，机械执行累积回归 |
-| Delivery 层 | `git commit`、`git push`、`gh pr create`、`docs/plan/archive/*` | 把变更转成可交付结果，并沉淀归档 |
+| Delivery 层 | `git commit`、`git push`、`scripts/deliver_pr.sh`、`docs/plan/archive/*` | 把变更转成可交付结果，并沉淀归档 |
 
 ### 架构关系图
 
@@ -259,7 +259,7 @@ flowchart LR
 | Stage 3 | `docs/plan/current.md`、`docs/security.md`、`issue_test/<issue_id>.sh`、`docs/workflow/stage3.md` |
 | Stage 4 | `docs/plan/current.md`、`docs/quality.md`、`issue_test/<issue_id>.sh`、`docs/workflow/stage4.md` |
 | Stage 5 | `docs/decisions.md`、`docs/plan/archive/<issue_id>.md`、`docs/workflow/stage5.md` |
-| Stage 6 | `docs/progress.md`、`docs/decisions.md`、`docs/workflow/stage6.md` |
+| Stage 6 | `docs/progress.md`、`docs/decisions.md`、`docs/plan/archive/<issue_id>.md`、`docs/workflow/stage6.md` |
 
 这个设计的重点是：每个 Stage 只读它真正需要的文件，不让 agent 在无关文档里游走。
 
@@ -278,13 +278,14 @@ flowchart TD
     S3 -->|同一错误修复超过 3 次<br/>或 issue test 有效性无法判断| STOP
 
     S4 -->|最终回归失败| S3
-    S4 -->|交付完成| S5["Stage 5<br/>Reflection"]
+    S4 -->|PR 就绪或 handoff 已写明| S5["Stage 5<br/>Reflection"]
     S4 -->|无法形成可交付本地 commit| STOP
 
     S5 --> S6["Stage 6<br/>Entropy Check"]
     S5 -->|REFLECT 缺失或不完整| STOP
 
-    S6 -->|只改文档| END
+    S6 -->|只改文档且 merge / auto-merge 成功| END
+    S6 -->|merge 受阻但 handoff 已补齐| END
     S6 -->|熵检查中改了代码| S3
     S6 -->|无法判断文档和代码谁对| STOP
 ```
@@ -294,11 +295,11 @@ flowchart TD
 | Stage | 输入 | 输出 | 修改什么 |
 | --- | --- | --- | --- |
 | Stage 1 | `stage.lock`、`progress.md`、`blockers.md`、`plan/current.md` | 路由结果：结束当前 run，或进入 Stage 2 / Stage 3 | `docs/stage.lock` |
-| Stage 2 | `plan/backlog.md`、`decisions.md`、`overview.md`、`antipatterns.md` | 确定 `issue_id`、创建当前 issue test、写好 `current.md`、把状态推进到 Stage 3 | `issue_test/<issue_id>.sh`、`docs/plan/current.md`、`docs/stage.lock`，必要时改 `docs/overview.md` 和 `docs/decisions.md` |
+| Stage 2 | `plan/backlog.md`、`decisions.md`、`overview.md`、`antipatterns.md` | 确定 `issue_id`、切到当前 issue 的独立分支、创建当前 issue test、写好 `current.md`、把状态推进到 Stage 3 | Git 当前工作分支、`issue_test/<issue_id>.sh`、`docs/plan/current.md`、`docs/stage.lock`，必要时改 `docs/overview.md` 和 `docs/decisions.md` |
 | Stage 3 | `plan/current.md`、`security.md`、当前 issue test、历史 issue tests、业务代码 | 代码实现完成，完整回归通过，推进到 Stage 4 | 业务代码、测试、`docs/plan/current.md`、`docs/stage.lock`，必要时改 `docs/architecture.md` 和 `docs/decisions.md` |
-| Stage 4 | `plan/current.md`、`quality.md`、完整回归结果、git 远端状态 | 本地 commit、远端 PR 或人工 handoff、进度更新、计划归档、推进到 Stage 5 | Git 历史、`docs/progress.md`、`docs/plan/archive/<issue_id>.md`、`docs/plan/current.md`、`docs/plan/backlog.md`、`docs/stage.lock` |
+| Stage 4 | `plan/current.md`、`quality.md`、完整回归结果、git 远端状态 | 本地 commit、PR URL 或人工 handoff、进度更新、计划归档、推进到 Stage 5 | Git 历史、`docs/progress.md`、`docs/plan/archive/<issue_id>.md`、`docs/plan/current.md`、`docs/plan/backlog.md`、`docs/stage.lock` |
 | Stage 5 | `decisions.md`、归档计划、当前 issue 上下文 | 反思结果、REFLECT 文件、可复用经验或反模式、推进到 Stage 6 | `docs/plan/archive/REFLECT-<issue_id>.md`、`docs/wisdom.md`、`docs/antipatterns.md`、`docs/stage.lock`，必要时改 `docs/decisions.md`、`docs/architecture.md`、`docs/conventions.md` |
-| Stage 6 | 全局文档、`progress.md`、`decisions.md`、代码现状 | 文档与代码对齐；若只改文档则结束 run，若改了代码则回到 Stage 3 | `docs/*.md`、`docs/stage.lock`，必要时也会改代码和测试 |
+| Stage 6 | 全局文档、`progress.md`、`decisions.md`、`plan/archive/<issue_id>.md`、代码现状、PR 状态 | 文档与代码对齐；若只改文档则尝试最终 merge / auto-merge 后结束 run；若改了代码则回到 Stage 3 | `docs/*.md`、`docs/stage.lock`、必要时补写 `docs/plan/archive/<issue_id>.md`，以及最终远端 merge 状态 |
 
 ## 每个 Stage 的流程
 
@@ -328,10 +329,11 @@ flowchart TD
 2. 从 `docs/plan/backlog.md` 里按 P0 → P1 → P2 选择一个未完成任务
 3. 对照 `docs/overview.md` 检查这个任务是否仍在项目范围内
 4. 生成 `issue_id`
-5. 创建 `issue_test/<issue_id>.sh`
-6. 把执行步骤写进 `docs/plan/current.md`
-7. 如果发生范围变化或关键技术选择，追加写入 `docs/decisions.md`
-8. 更新 `docs/stage.lock` 到 Stage 3
+5. 创建并切换到当前 issue 的独立工作分支，默认命名 `codex/<issue_id>`
+6. 创建 `issue_test/<issue_id>.sh`
+7. 把执行步骤写进 `docs/plan/current.md`
+8. 如果发生范围变化或关键技术选择，追加写入 `docs/decisions.md`
+9. 更新 `docs/stage.lock` 到 Stage 3
 
 这个阶段的核心约束是：没有 issue test，就不能进入实现阶段。
 
@@ -360,15 +362,15 @@ flowchart TD
 1. 再跑一次完整 issue 回归，作为最终 gate
 2. 按 `docs/quality.md` 做人工自查
 3. 创建可交付的本地 commit
-4. 尝试 `git push` 和 `gh pr create`
+4. 执行 `bash scripts/deliver_pr.sh ensure --base <base-branch>`，推送当前 issue 分支并创建或复用 PR
 5. 如果远端交付受网络、权限或宿主环境限制，可以降级为“本地交付 + 人工 handoff”
 6. 更新 `docs/progress.md`
-7. 归档 `docs/plan/current.md` 到 `docs/plan/archive/<issue_id>.md`
+7. 归档 `docs/plan/current.md` 到 `docs/plan/archive/<issue_id>.md`，写入 PR URL 或 handoff 信息
 8. 清空并重置 `docs/plan/current.md`
 9. 把对应 backlog 条目标为 `[x]`
 10. 更新 `docs/stage.lock` 到 Stage 5
 
-这里的关键不是“必须成功开 PR”，而是“必须形成可复现、可 handoff 的交付状态”。
+这里的关键不是“Stage 4 就要 merge 成功”，而是“必须先形成可复现、可 handoff 的交付状态，并把 PR 准备好交给 Stage 6 收口”。
 
 ### Stage 5: Reflection
 
@@ -395,10 +397,13 @@ flowchart TD
 2. 如果只是文档落后，就只改文档
 3. 如果发现代码和文档记录的意图冲突，就修代码并补测试
 4. 检查 `docs/decisions.md` 中是否需要做 compaction
-5. 如果只改文档，写回 `stage1/done/previous=stage6`，本次 run 结束
-6. 如果改了代码，跳回 Stage 3，再走一遍实现到交付的闭环
+5. 如果只改文档，先写回 `stage1/done/previous=stage6`
+6. 然后执行 `git push` 和 `bash scripts/deliver_pr.sh merge --merge-method squash`
+7. 若 merge 直接成功或成功开启 auto-merge，本次 run 结束
+8. 若 merge 因环境或权限受阻，则把 handoff 追加写进归档后结束
+9. 如果改了代码，跳回 Stage 3，再走一遍实现到交付的闭环
 
-因此，Stage 6 不是“收尾文书工作”，而是整个状态机里最后一道一致性检查。
+因此，Stage 6 不是“收尾文书工作”，而是整个状态机里最后一道一致性检查和最终 merge 收口点。
 
 ## 这个模板的核心约束
 

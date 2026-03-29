@@ -33,8 +33,9 @@
 
 ### Branch 命名
 
-- 格式：`<type>/<issue-id>-<short-description>`
-- 示例：`feat/42-add-user-auth`
+- 默认格式：`codex/<issue_id>`
+- 示例：`codex/42-add-user-auth`
+- 若团队已有统一前缀，可替换 `codex`，但必须保持“一个 issue 一个分支”
 
 ### PR 规范
 

@@ -80,4 +80,4 @@ python scripts/build_context.py --stage <current>
 8. 进入 Stage 3 前，必须存在当前 issue 对应的 `issue_test/<meta.issue_id>.sh`；后续 issue 不得删除、跳过或弱化历史 issue tests 来规避回归。
 9. 单次 run 只允许完成一个 issue 闭环；若检测到 `current: stage1`、`status: done`、`previous: stage6`，必须停止，不得在同一次 run 中继续领取新 issue。
 10. 遇到无法自行解决的问题，写入 `docs/blockers.md` 后停止，不得绕过阻塞继续执行。
-11. Stage 4 的远端交付若受网络、权限或宿主环境限制阻塞，可以退化为“本地交付 + 人工 handoff”，但必须把本地 commit hash、失败命令和下一步人工动作写进归档记录。
+11. Stage 4 负责创建或更新 PR，不负责最终 merge；Stage 6 才负责最终 merge / auto-merge。若 Stage 4 或 Stage 6 的远端交付受网络、权限或宿主环境限制阻塞，可以退化为“本地交付 / merge handoff”，但必须把本地 commit hash、失败命令和下一步人工动作写进归档记录。

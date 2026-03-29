@@ -135,14 +135,14 @@ def resolve_files(stage, repo_root, lock_data):
             )
             sys.exit(1)
 
-    # 4. Stage 5 动态注入 archive 文件（必须）
-    if stage == "stage5":
+    # 4. Stage 5/6 动态注入 archive 文件（必须）
+    if stage in {"stage5", "stage6"}:
         issue_id = (lock_data.get("meta") or {}).get("issue_id")
         if issue_id:
             required.append(f"docs/plan/archive/{issue_id}.md")
         else:
             print(
-                "[build_context] FATAL: stage5 but meta.issue_id is null in stage.lock",
+                f"[build_context] FATAL: {stage} but meta.issue_id is null in stage.lock",
                 file=sys.stderr,
             )
             sys.exit(1)

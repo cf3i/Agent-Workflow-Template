@@ -22,13 +22,13 @@
 - [ ] 变更已同步到相关文档
 - [ ] 重要决策已写入 `docs/decisions.md`
 - [ ] `docs/progress.md` 已反映当前状态
-- [ ] 已记录交付状态：PR URL，或“本地交付 + 人工 handoff”信息
+- [ ] 已记录交付状态：归档中已有 PR URL，且 Stage 6 已完成 merge / auto-merge，或已补充“本地交付 / merge handoff”信息
 
 ### 安全
 
 - [ ] 未泄漏敏感信息
 - [ ] 认证/鉴权相关改动经过复核（如适用）
-- [ ] 变更风险已在 PR 描述中注明
+- [ ] 若存在 PR，变更风险已在 PR 描述中注明
 
 ## issue_test 机制（固定）
 

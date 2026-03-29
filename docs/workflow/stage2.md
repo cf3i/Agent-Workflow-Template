@@ -33,6 +33,16 @@
 - number 从 backlog 条目编号或自增序号取
 - short-description 用 kebab-case，不超过 5 个词
 
+### Step 3.5：创建或切换当前 issue 分支
+
+默认工作分支名：`codex/<issue_id>`
+
+- 当前已在 `codex/<issue_id>` → 继续
+- 本地已存在 `codex/<issue_id>` → 执行 `git switch codex/<issue_id>`
+- 当前在默认分支（优先按 `origin/HEAD` 推断，缺失时视为 `main`），且本地尚无 `codex/<issue_id>` → 执行 `git switch -c codex/<issue_id>`
+- 当前在与本 issue 无关的其他工作分支 → 停止并通知人类，避免把两个 issue 混到同一分支
+- 若团队已在 `docs/conventions.md` 定义等价前缀，可替换 `codex`，但必须保持“一 issue 一分支”
+
 ### Step 4：创建当前 issue 的测试脚本
 
 创建 `issue_test/<issue_id>.sh`，要求：
@@ -75,6 +85,7 @@ meta:
 ## Exit Checklist
 
 - [ ] `docs/overview.md` 已检查，范围变更时已更新并追加 decisions.md
+- [ ] 当前 issue 已切到独立工作分支（默认：`codex/<issue_id>`）
 - [ ] `issue_test/<issue_id>.sh` 已创建，覆盖当前 issue 的目标行为，且失败时会输出诊断信息
 - [ ] `docs/plan/current.md` 非空，有可勾选步骤
 - [ ] `docs/plan/current.md` 已记录当前 issue 测试脚本路径和两次验证命令
@@ -86,4 +97,5 @@ meta:
 
 - backlog 为空 → 更新 stage.lock（status: failed），停止，通知人类补充任务
 - 需求不清晰无法拆解 → 更新 stage.lock（status: failed），停止，通知人类澄清
+- 无法安全切换到当前 issue 的独立工作分支 → 更新 stage.lock（status: failed），停止，通知人类处理分支状态
 - 无法把需求表达为可执行的 `issue_test/<issue_id>.sh` → 更新 stage.lock（status: failed），停止，通知人类澄清验收标准

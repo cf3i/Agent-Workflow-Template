@@ -79,6 +79,7 @@ MANAGED_FILES=(
     "issue_test/README.md"
     "scripts/build_context.py"
     "scripts/run_issue_tests.sh"
+    "scripts/deliver_pr.sh"
 )
 
 usage() {
@@ -447,6 +448,7 @@ ensure_scaffold_is_valid() {
         "issue_test/README.md"
         "scripts/build_context.py"
         "scripts/run_issue_tests.sh"
+        "scripts/deliver_pr.sh"
     )
     local f=""
     for f in "${required_files[@]}"; do
@@ -731,6 +733,7 @@ copy_template_skeleton() {
     mkdir -p "$TARGET_DIR/scripts"
     copy_managed_file "scripts/build_context.py"
     copy_managed_file "scripts/run_issue_tests.sh"
+    copy_managed_file "scripts/deliver_pr.sh"
 
     # ── 需要 Agent 填充的模板文件 ──────────────────────────────────
     # 以下文件以空白模板复制，init.sh 后续步骤会调用 Agent 填充。

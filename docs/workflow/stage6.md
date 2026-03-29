@@ -44,7 +44,8 @@ meta:
   code_changed: null
 ```
 
-- 写回上述状态后，**本次 run 成功结束**
+- 写回上述状态后，进入 Step 5 做最终远端交付
+- 先单独 git commit：`chore(stage): stage6 → stage1 [done]`
 - 不要在同一次 run 中继续领取 backlog 的下一个任务；下一次启动再从 Stage 1 开始新的 issue
 
 **路径 B（改了代码）：**
@@ -58,6 +59,27 @@ meta:
   # issue_id 保留，走完整 S3 → S4 → S5 闭环
 ```
 
+- 单独 git commit：`chore(stage): stage6 → stage3 [code-changed]`
+
+### Step 5：最终远端交付（仅路径 A）
+
+优先执行：
+
+```bash
+git push
+bash scripts/deliver_pr.sh merge --merge-method squash
+```
+
+- `ACTION=MERGED` → PR 已完成最终 merge，本次 run 成功结束
+- `ACTION=AUTO_MERGE_ENABLED` → 已开启 auto-merge，本次 run 成功结束
+- 若因网络、DNS、权限、宿主沙箱限制、`gh` 不可用或仓库设置阻塞，最多重试 3 次，然后在 `docs/plan/archive/<issue_id>.md` 追加 merge handoff：
+  - 已有 PR URL（若存在）
+  - 当前最终本地 commit hash
+  - 失败命令与报错摘要
+  - 人类下一步动作（例如补权限、补凭据、重试 `bash scripts/deliver_pr.sh merge --merge-method squash`）
+- 追加 handoff 后，如有新文档修改，必须新增一个普通 commit；**不要 amend 或混入 Stage 6 的 stage.lock commit**
+- merge handoff 不是失败：只要最终状态和人工下一步已经写清，本次 run 也可结束
+
 ## Exit Checklist
 
 - [ ] 文档与代码已对齐，无已知偏差
@@ -67,7 +89,13 @@ meta:
 - [ ] `stage.lock` 更新已单独 git commit
   - 路径 A 格式：`chore(stage): stage6 → stage1 [done]`
   - 路径 B 格式：`chore(stage): stage6 → stage3 [code-changed]`
+- [ ] 若走路径 A，已满足以下三者之一：
+  - PR 已直接 merge
+  - PR 已启用 auto-merge
+  - `docs/plan/archive/<issue_id>.md` 已追加 merge handoff，且失败原因与人工下一步明确
+- [ ] 若走路径 B：本次 run 未尝试 merge，准备回到 Stage 3 继续闭环
 
 ## Failure Path
 
 - 发现文档和代码的矛盾无法判断谁对 → 写入 `docs/blockers.md`，更新 stage.lock（status: failed），停止，通知人类
+- 路径 A 中无法判断 merge 失败是否已完整转写为 handoff → 写入 `docs/blockers.md`，更新 stage.lock（status: failed），停止，通知人类

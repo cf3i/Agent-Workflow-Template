@@ -11,7 +11,9 @@
 
 1. 复制 `docs/plan/current.md` 内容到新归档文件。
 2. 在归档文件中补充以下内容：
-   - PR 链接，或“本地交付 + 人工 handoff”说明
+   - PR 链接
+   - 若 Stage 6 无法完成最终 merge：补充“merge handoff”说明（失败命令、报错摘要、人工下一步）
+   - 若 Stage 4 就已退化为本地交付：补充“本地交付 + 人工 handoff”说明
    - 最终结论
    - 对应测试脚本路径（`issue_test/<issue_id>.sh`）
    - 本地交付 commit hash
