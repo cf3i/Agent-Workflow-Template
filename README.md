@@ -4,6 +4,20 @@
 
 它解决的不是“怎么写 prompt”，而是“怎么把 agent 的工作流程变成可重复执行、可验证、可中断恢复的工程系统”。
 
+## 实仓验证
+
+这套流程已经在真实 GitHub 仓库里完整跑通过一次，不只是模板内自测。
+
+- 验证日期：2026-03-29
+- 目标仓库：[cf3i/MiniAVLtree](https://github.com/cf3i/MiniAVLtree)
+- 验证任务：在 `docs/plan/backlog.md` 中新增“为 AVL 树新增 HTML 可视化页面”
+- Stage 2：按规则创建独立工作分支 `codex/2-html-avl-visualizer`
+- Stage 4：通过 `bash scripts/deliver_pr.sh ensure --base main` 创建 PR [#2](https://github.com/cf3i/MiniAVLtree/pull/2)
+- Stage 6：通过 `bash scripts/deliver_pr.sh merge --merge-method squash` 完成最终 merge
+- 最终状态：目标仓库回到 `stage1 / done / previous=stage6`
+
+这次实仓回归还顺手抓到了一个真实问题：`deliver_pr.sh` 在输出 `MERGE_COMMIT_SHA` 时，`gh --jq` 的引号写法有误。该问题已修复，并回写到模板本身。
+
 ## 这个项目怎么用
 
 ### 1. 用 `init.sh` 初始化你的目标仓库
